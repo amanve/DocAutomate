@@ -1,4 +1,4 @@
-﻿using DocAutomate.Services;
+using DocAutomate.Services;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -21,7 +21,7 @@ namespace DocAutomate
             using (var dialog = new OpenFileDialog())
             {
                 dialog.Title = "Select an Excel file";
-                dialog.Filter = "Excel workbooks (*.xlsx)|*.xlsx";
+                dialog.Filter = "Excel workbooks (*.xlsx;*.xlsm;*.xls)|*.xlsx;*.xlsm;*.xls";
                 dialog.DefaultExt = "xlsx";
                 dialog.CheckFileExists = true;
                 dialog.CheckPathExists = true;
@@ -29,6 +29,19 @@ namespace DocAutomate
 
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                     sourceFileTextBox.Text = dialog.FileName;
+            }
+        }
+
+        private void powerpointBrowseButton_Click(object sender, EventArgs e)
+        {
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Select the Software changes PowerPoint";
+                dialog.Filter = "PowerPoint presentations (*.pptx)|*.pptx";
+                dialog.CheckFileExists = true;
+                dialog.RestoreDirectory = true;
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                    powerpointTextBox.Text = dialog.FileName;
             }
         }
 
@@ -45,8 +58,9 @@ namespace DocAutomate
             for (int i = 0; i < nameInputs.Length; i++)
             {
                 string part = nameInputs[i].Text.Trim();
-                if (part.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    part = part.Substring(0, part.Length - 5);
+                string extension = Path.GetExtension(part);
+                if (ExcelDocumentService.IsSupportedExtension(extension))
+                    part = part.Substring(0, part.Length - extension.Length);
 
                 if (!ExcelDocumentService.IsValidNamePart(part))
                 {
@@ -76,7 +90,7 @@ namespace DocAutomate
                     return;
                 }
 
-                documentService.Generate(sourceFileTextBox.Text, destination);
+                documentService.Generate(sourceFileTextBox.Text, destination, powerpointTextBox.Text.Trim());
                 try
                 {
                     Process.Start(new ProcessStartInfo

@@ -37,7 +37,24 @@
             this.firstNameLabel = new System.Windows.Forms.Label();
             this.secondNameLabel = new System.Windows.Forms.Label();
             this.selectedDateCalendar = new System.Windows.Forms.MonthCalendar();
+            this.powerpointTextBox = new System.Windows.Forms.TextBox();
+            this.powerpointBrowseButton = new System.Windows.Forms.Button();
+            this.powerpointLabel = new System.Windows.Forms.Label();
             this.SuspendLayout();
+            this.powerpointLabel.AutoSize = true;
+            this.powerpointLabel.Location = new System.Drawing.Point(90, 148);
+            this.powerpointLabel.Text = "PowerPoint file";
+            this.powerpointTextBox.Location = new System.Drawing.Point(223, 145);
+            this.powerpointTextBox.Size = new System.Drawing.Size(293, 22);
+            this.powerpointTextBox.TabIndex = 6;
+            this.powerpointBrowseButton.Location = new System.Drawing.Point(576, 145);
+            this.powerpointBrowseButton.Size = new System.Drawing.Size(75, 23);
+            this.powerpointBrowseButton.Text = "Browse";
+            this.powerpointBrowseButton.TabIndex = 7;
+            this.powerpointBrowseButton.Click += new System.EventHandler(this.powerpointBrowseButton_Click);
+            this.Controls.Add(this.powerpointLabel);
+            this.Controls.Add(this.powerpointTextBox);
+            this.Controls.Add(this.powerpointBrowseButton);
             // 
             // browseButton
             // 
@@ -137,6 +154,9 @@
 
         #endregion
 
+        private System.Windows.Forms.TextBox powerpointTextBox;
+        private System.Windows.Forms.Button powerpointBrowseButton;
+        private System.Windows.Forms.Label powerpointLabel;
         private System.Windows.Forms.Label sourceFileLabel;
         private System.Windows.Forms.Label firstNameLabel;
         private System.Windows.Forms.Label secondNameLabel;

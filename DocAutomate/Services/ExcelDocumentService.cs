@@ -1,4 +1,3 @@
-﻿using ClosedXML.Excel;
 using System;
 using System.IO;
 
@@ -6,6 +5,13 @@ namespace DocAutomate.Services
 {
     internal sealed class ExcelDocumentService
     {
+        public static bool IsSupportedExtension(string extension)
+        {
+            return string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".xlsm", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static bool IsValidNamePart(string part)
         {
             return !string.IsNullOrWhiteSpace(part)
@@ -16,21 +22,36 @@ namespace DocAutomate.Services
 
         public string GetDestination(string sourceFile, string[] nameParts, DateTime selectedDate)
         {
-            return Path.Combine(Path.GetDirectoryName(sourceFile), string.Join("_", nameParts) + "_" + selectedDate.ToString("yyMMdd", System.Globalization.CultureInfo.InvariantCulture) + ".xlsx");
+            string extension = GetSupportedExtension(sourceFile);
+            return Path.Combine(Path.GetDirectoryName(sourceFile), string.Join("_", nameParts) + "_" + selectedDate.ToString("yyMMdd", System.Globalization.CultureInfo.InvariantCulture) + extension);
         }
 
-        public void Generate(string sourceFile, string destination)
+        public void Generate(string sourceFile, string destination, string powerpointFile = null)
         {
-            using (var workbook = new XLWorkbook(sourceFile))
-            using (var generatedDocument = new MemoryStream())
+            string extension = GetSupportedExtension(sourceFile);
+            if (!string.Equals(extension, Path.GetExtension(destination), StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("The generated file must use the same Excel format as the source.", "destination");
+
+            if (string.IsNullOrWhiteSpace(powerpointFile))
             {
-                workbook.SaveAs(generatedDocument);
-                generatedDocument.Position = 0;
-                using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write))
-                    generatedDocument.CopyTo(output);
+                File.Copy(sourceFile, destination, false);
+                return;
             }
+            if (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("PowerPoint updates require .xlsx or .xlsm. Save the .xls workbook in a modern Excel format first.");
+
+            byte[] updated = new SoftwareTableService().Apply(sourceFile, powerpointFile);
+            using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write))
+                output.Write(updated, 0, updated.Length);
+        }
+
+        private static string GetSupportedExtension(string sourceFile)
+        {
+            string extension = Path.GetExtension(sourceFile);
+            if (!IsSupportedExtension(extension))
+                throw new ArgumentException("Please select an .xlsx, .xlsm, or .xls file.", "sourceFile");
+
+            return extension;
         }
     }
 }
-
-
