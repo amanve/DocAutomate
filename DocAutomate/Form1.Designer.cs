@@ -40,21 +40,9 @@
             this.powerpointTextBox = new System.Windows.Forms.TextBox();
             this.powerpointBrowseButton = new System.Windows.Forms.Button();
             this.powerpointLabel = new System.Windows.Forms.Label();
+            this.textBox1 = new System.Windows.Forms.TextBox();
+            this.label1 = new System.Windows.Forms.Label();
             this.SuspendLayout();
-            this.powerpointLabel.AutoSize = true;
-            this.powerpointLabel.Location = new System.Drawing.Point(90, 148);
-            this.powerpointLabel.Text = "PowerPoint file";
-            this.powerpointTextBox.Location = new System.Drawing.Point(223, 145);
-            this.powerpointTextBox.Size = new System.Drawing.Size(293, 22);
-            this.powerpointTextBox.TabIndex = 6;
-            this.powerpointBrowseButton.Location = new System.Drawing.Point(576, 145);
-            this.powerpointBrowseButton.Size = new System.Drawing.Size(75, 23);
-            this.powerpointBrowseButton.Text = "Browse";
-            this.powerpointBrowseButton.TabIndex = 7;
-            this.powerpointBrowseButton.Click += new System.EventHandler(this.powerpointBrowseButton_Click);
-            this.Controls.Add(this.powerpointLabel);
-            this.Controls.Add(this.powerpointTextBox);
-            this.Controls.Add(this.powerpointBrowseButton);
             // 
             // browseButton
             // 
@@ -76,7 +64,7 @@
             // 
             // firstNameTextBox
             // 
-            this.firstNameTextBox.Location = new System.Drawing.Point(223, 188);
+            this.firstNameTextBox.Location = new System.Drawing.Point(223, 224);
             this.firstNameTextBox.Name = "firstNameTextBox";
             this.firstNameTextBox.Size = new System.Drawing.Size(293, 22);
             this.firstNameTextBox.TabIndex = 2;
@@ -110,20 +98,20 @@
             // firstNameLabel
             // 
             this.firstNameLabel.AutoSize = true;
-            this.firstNameLabel.Location = new System.Drawing.Point(90, 191);
+            this.firstNameLabel.Location = new System.Drawing.Point(90, 226);
             this.firstNameLabel.Name = "firstNameLabel";
-            this.firstNameLabel.Size = new System.Drawing.Size(57, 17);
+            this.firstNameLabel.Size = new System.Drawing.Size(34, 17);
             this.firstNameLabel.TabIndex = 1;
-            this.firstNameLabel.Text = "Name 1";
+            this.firstNameLabel.Text = "Part";
             // 
             // secondNameLabel
             // 
             this.secondNameLabel.AutoSize = true;
             this.secondNameLabel.Location = new System.Drawing.Point(90, 263);
             this.secondNameLabel.Name = "secondNameLabel";
-            this.secondNameLabel.Size = new System.Drawing.Size(57, 17);
+            this.secondNameLabel.Size = new System.Drawing.Size(36, 17);
             this.secondNameLabel.TabIndex = 2;
-            this.secondNameLabel.Text = "Name 2";
+            this.secondNameLabel.Text = "CRC";
             // 
             // selectedDateCalendar
             // 
@@ -131,11 +119,60 @@
             this.selectedDateCalendar.Name = "selectedDateCalendar";
             this.selectedDateCalendar.TabIndex = 5;
             // 
+            // powerpointTextBox
+            // 
+            this.powerpointTextBox.Location = new System.Drawing.Point(223, 145);
+            this.powerpointTextBox.Name = "powerpointTextBox";
+            this.powerpointTextBox.ReadOnly = true;
+            this.powerpointTextBox.Size = new System.Drawing.Size(293, 22);
+            this.powerpointTextBox.TabIndex = 6;
+            // 
+            // powerpointBrowseButton
+            // 
+            this.powerpointBrowseButton.Location = new System.Drawing.Point(576, 145);
+            this.powerpointBrowseButton.Name = "powerpointBrowseButton";
+            this.powerpointBrowseButton.Size = new System.Drawing.Size(75, 23);
+            this.powerpointBrowseButton.TabIndex = 7;
+            this.powerpointBrowseButton.Text = "Browse";
+            this.powerpointBrowseButton.Click += new System.EventHandler(this.powerpointBrowseButton_Click);
+            // 
+            // powerpointLabel
+            // 
+            this.powerpointLabel.AutoSize = true;
+            this.powerpointLabel.Location = new System.Drawing.Point(90, 148);
+            this.powerpointLabel.Name = "powerpointLabel";
+            this.powerpointLabel.Size = new System.Drawing.Size(101, 17);
+            this.powerpointLabel.TabIndex = 0;
+            this.powerpointLabel.Text = "PowerPoint file";
+            // 
+            // textBox1
+            // 
+            this.textBox1.Location = new System.Drawing.Point(223, 185);
+            this.textBox1.Name = "textBox1";
+            this.textBox1.Size = new System.Drawing.Size(293, 22);
+            this.textBox1.TabIndex = 8;
+            this.textBox1.TextChanged += new System.EventHandler(this.textBox1_TextChanged);
+            // 
+            // label1
+            // 
+            this.label1.AutoSize = true;
+            this.label1.Location = new System.Drawing.Point(93, 189);
+            this.label1.Name = "label1";
+            this.label1.Size = new System.Drawing.Size(46, 17);
+            this.label1.TabIndex = 9;
+            this.label1.Text = "Model";
+            this.label1.Click += new System.EventHandler(this.label1_Click);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(825, 517);
+            this.Controls.Add(this.label1);
+            this.Controls.Add(this.textBox1);
+            this.Controls.Add(this.powerpointLabel);
+            this.Controls.Add(this.powerpointTextBox);
+            this.Controls.Add(this.powerpointBrowseButton);
             this.Controls.Add(this.selectedDateCalendar);
             this.Controls.Add(this.sourceFileLabel);
             this.Controls.Add(this.firstNameLabel);
@@ -166,6 +203,8 @@
         private System.Windows.Forms.Button generateButton;
         private System.Windows.Forms.TextBox secondNameTextBox;
         private System.Windows.Forms.MonthCalendar selectedDateCalendar;
+        private System.Windows.Forms.TextBox textBox1;
+        private System.Windows.Forms.Label label1;
     }
 }
 

@@ -30,6 +30,34 @@ namespace DocAutomate.Services
             return string.Concat(element.Descendants(ns + "t").Select(t => t.Value));
         }
 
+        private static bool HasSoftwareChangesTitle(XDocument document)
+        {
+            return document.Descendants(P + "sp").Any(shape =>
+                string.Equals(Text(shape, A).Trim(), "Software Changes", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static PackagePart RelatedPart(Package package, PackagePart part, string relationshipName)
+        {
+            const string prefix = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+            PackageRelationship relationship = part.GetRelationshipsByType(prefix + relationshipName)
+                .FirstOrDefault(r => r.TargetMode == TargetMode.Internal);
+            return relationship == null ? null : package.GetPart(
+                PackUriHelper.ResolvePartUri(part.Uri, relationship.TargetUri));
+        }
+
+        private static bool IsSoftwareChangesSlide(Package package, PackagePart part, XDocument slide)
+        {
+            if (HasSoftwareChangesTitle(slide)) return true;
+
+            // Text shown in Master View belongs to the slide's layout or its master.
+            PackagePart layout = RelatedPart(package, part, "slideLayout");
+            if (layout == null) return false;
+            if (HasSoftwareChangesTitle(Read(layout))) return true;
+
+            PackagePart master = RelatedPart(package, layout, "slideMaster");
+            return master != null && HasSoftwareChangesTitle(Read(master));
+        }
+
         private static List<Change> ReadChanges(string path)
         {
             if (!string.Equals(Path.GetExtension(path), ".pptx", StringComparison.OrdinalIgnoreCase))
@@ -40,10 +68,7 @@ namespace DocAutomate.Services
                 foreach (PackagePart part in package.GetParts().Where(p => p.ContentType == "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"))
                 {
                     XDocument slide = Read(part);
-                    bool software = slide.Descendants(P + "sp").Any(shape =>
-                        string.Equals(Text(shape, A).Trim(), "Software", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(Text(shape, A).Trim(), "Software Changes", StringComparison.OrdinalIgnoreCase));
-                    if (!software) continue;
+                    if (!IsSoftwareChangesSlide(package, part, slide)) continue;
                     foreach (XElement table in slide.Descendants(A + "tbl"))
                     {
                         string group = null;
@@ -70,7 +95,7 @@ namespace DocAutomate.Services
                 }
             }
             if (changes.Count == 0)
-                throw new InvalidOperationException("No data table found on a Software or Software Changes slide.");
+                throw new InvalidOperationException("No data table found on a Software Changes slide.");
             return changes;
         }
 
@@ -81,6 +106,107 @@ namespace DocAutomate.Services
             if ((string)cell.Attribute("t") == "s") return shared[int.Parse(value, CultureInfo.InvariantCulture)];
             if ((string)cell.Attribute("t") == "inlineStr") return Text(cell, S);
             return value;
+        }
+
+        private static void SetText(XElement cell, string value)
+        {
+            cell.Elements(S + "f").Remove();
+            cell.Elements(S + "v").Remove();
+            cell.Elements(S + "is").Remove();
+            cell.SetAttributeValue("t", "inlineStr");
+            cell.AddFirst(new XElement(S + "is", new XElement(S + "t",
+                new XAttribute(XNamespace.Xml + "space", "preserve"), value)));
+        }
+
+        private static bool IsValueHeader(string text)
+        {
+            text = text.Trim();
+            return text.StartsWith("Fill Value from ", StringComparison.OrdinalIgnoreCase) ||
+                (text.StartsWith("SAA", StringComparison.Ordinal) &&
+                 text.IndexOf(" (0x", StringComparison.Ordinal) > 3 &&
+                 text.EndsWith(")", StringComparison.Ordinal));
+        }
+
+        private static bool FillDocumentInputs(XDocument sheet, List<string> shared, string part, string crc, string model)
+        {
+            if (part == null || crc == null) return false;
+            var cells = sheet.Descendants(S + "c").ToList();
+            bool updated = false;
+            foreach (XElement header in cells.Where(c =>
+                IsValueHeader(CellText(c, shared))))
+            {
+                int valueColumn = Column((string)header.Attribute("r"));
+                int headerRow = Row((string)header.Attribute("r"));
+                foreach (XElement label in cells.Where(c =>
+                    Column((string)c.Attribute("r")) == valueColumn - 1 &&
+                    Row((string)c.Attribute("r")) > headerRow))
+                {
+                    string text = CellText(label, shared).Trim();
+                    string value = text.Equals("Part", StringComparison.OrdinalIgnoreCase) ? part :
+                        text.Equals("CRC", StringComparison.OrdinalIgnoreCase) ? crc : null;
+                    if (value == null) continue;
+                    string address = Address(valueColumn, Row((string)label.Attribute("r")));
+                    XElement target = cells.FirstOrDefault(c => (string)c.Attribute("r") == address);
+                    if (target == null)
+                    {
+                        target = new XElement(S + "c", new XAttribute("r", address));
+                        XElement next = label.Parent.Elements(S + "c").FirstOrDefault(c =>
+                            Column((string)c.Attribute("r")) > valueColumn);
+                        if (next == null) label.Parent.Add(target);
+                        else next.AddBeforeSelf(target);
+                    }
+                    SetText(target, value);
+                }
+                if (model != null && headerRow > 1)
+                {
+                    string modelAddress = Address(valueColumn, headerRow - 1);
+                    XElement modelCell = cells.FirstOrDefault(c => (string)c.Attribute("r") == modelAddress);
+                    if (modelCell == null)
+                    {
+                        XElement data = sheet.Root.Element(S + "sheetData");
+                        XElement modelRow = data.Elements(S + "row").FirstOrDefault(r => (int)r.Attribute("r") == headerRow - 1);
+                        if (modelRow == null)
+                        {
+                            modelRow = new XElement(S + "row", new XAttribute("r", headerRow - 1));
+                            XElement nextRow = data.Elements(S + "row").FirstOrDefault(r => (int)r.Attribute("r") > headerRow - 1);
+                            if (nextRow == null) data.Add(modelRow);
+                            else nextRow.AddBeforeSelf(modelRow);
+                        }
+                        modelCell = new XElement(S + "c", new XAttribute("r", modelAddress));
+                        XElement nextCell = modelRow.Elements(S + "c").FirstOrDefault(c => Column((string)c.Attribute("r")) > valueColumn);
+                        if (nextCell == null) modelRow.Add(modelCell);
+                        else nextCell.AddBeforeSelf(modelCell);
+                        // Let Excel recompute the used range after adding the model cell.
+                        sheet.Root.Elements(S + "dimension").Remove();
+                    }
+                    SetText(modelCell, model);
+                }
+                SetText(header, part + " (" + crc + ")");
+                updated = true;
+            }
+            return updated;
+        }
+
+        private static bool ClearCheckResults(XDocument sheet, List<string> shared)
+        {
+            var cells = sheet.Descendants(S + "c").ToList();
+            var headers = cells.Where(c =>
+                new[] { "Check1", "Check2", "Check3" }.Contains(CellText(c, shared).Trim()))
+                .Select(c => new { Column = Column((string)c.Attribute("r")), Row = Row((string)c.Attribute("r")) })
+                .ToList();
+            bool cleared = false;
+            foreach (XElement cell in cells)
+            {
+                string address = (string)cell.Attribute("r");
+                if (CellText(cell, shared) != "OK" ||
+                    !headers.Any(h => h.Column == Column(address) && h.Row < Row(address))) continue;
+                cell.Elements(S + "v").Remove();
+                cell.Elements(S + "is").Remove();
+                cell.Elements(S + "f").Remove();
+                cell.SetAttributeValue("t", null);
+                cleared = true;
+            }
+            return cleared;
         }
 
         private static int Column(string address)
@@ -116,6 +242,93 @@ namespace DocAutomate.Services
             string letters = "";
             while (column > 0) { column--; letters = (char)('A' + column % 26) + letters; column /= 26; }
             return letters + row.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static bool IsOldHighlight(XElement color, List<string> theme, List<string> indexed, bool font)
+        {
+            if (color == null) return false;
+            string rgb = (string)color.Attribute("rgb");
+            int index;
+            if (rgb == null && int.TryParse((string)color.Attribute("theme"), out index) &&
+                index >= 0 && index < theme.Count) rgb = theme[index];
+            if (rgb == null && int.TryParse((string)color.Attribute("indexed"), out index) &&
+                index >= 0 && index < indexed.Count) rgb = indexed[index];
+            uint value;
+            if (rgb == null || !uint.TryParse(rgb, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value))
+                return false;
+            double r = (value >> 16) & 255, g = (value >> 8) & 255, b = value & 255;
+            double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
+            double delta = max - min;
+            if (delta < 1 || delta / max < 0.15) return false;
+            double hue = max == r ? 60 * ((g - b) / delta) :
+                max == g ? 60 * (2 + (b - r) / delta) : 60 * (4 + (r - g) / delta);
+            if (hue < 0) hue += 360;
+            // Include light and dark shades of red, orange and yellow.
+            return font ? hue <= 15 || hue >= 345 : hue >= 20 && hue <= 65;
+        }
+
+        private static void ClearOldHighlights(Package package)
+        {
+            var theme = new List<string>();
+            PackagePart themePart = package.GetParts().FirstOrDefault(p =>
+                p.ContentType == "application/vnd.openxmlformats-officedocument.theme+xml");
+            if (themePart != null)
+            {
+                XElement scheme = Read(themePart).Descendants(A + "clrScheme").FirstOrDefault();
+                if (scheme != null)
+                {
+                    // Spreadsheet theme indexes use light before dark.
+                    foreach (string name in new[] { "lt1", "dk1", "lt2", "dk2", "accent1", "accent2",
+                        "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink" })
+                    {
+                        XElement entry = scheme.Element(A + name);
+                        XElement color = entry == null ? null : entry.Elements().FirstOrDefault();
+                        theme.Add(color == null ? null : (string)color.Attribute("lastClr") ?? (string)color.Attribute("val"));
+                    }
+                }
+            }
+            var indexed = ("000000 FFFFFF FF0000 00FF00 0000FF FFFF00 FF00FF 00FFFF " +
+                "000000 FFFFFF FF0000 00FF00 0000FF FFFF00 FF00FF 00FFFF " +
+                "800000 008000 000080 808000 800080 008080 C0C0C0 808080 " +
+                "9999FF 993366 FFFFCC CCFFFF 660066 FF8080 0066CC CCCCFF " +
+                "000080 FF00FF FFFF00 00FFFF 800080 800000 008080 0000FF " +
+                "00CCFF CCFFFF CCFFCC FFFF99 99CCFF FF99CC CC99FF FFCC99 " +
+                "3366FF 33CCCC 99CC00 FFCC00 FF9900 FF6600 666699 969696 " +
+                "003366 339966 003300 333300 993300 993366 333399 333333").Split(' ').ToList();
+            PackagePart stylesPart = package.GetParts().FirstOrDefault(p =>
+                p.ContentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml");
+            if (stylesPart != null)
+            {
+                XDocument styles = Read(stylesPart);
+                XElement custom = styles.Descendants(S + "indexedColors").FirstOrDefault();
+                if (custom != null) indexed = custom.Elements(S + "rgbColor").Select(c => (string)c.Attribute("rgb")).ToList();
+            }
+
+            foreach (PackagePart part in package.GetParts().Where(p =>
+                p.ContentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml" ||
+                p.ContentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml" ||
+                p.ContentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml").ToList())
+            {
+                XDocument document = Read(part);
+                bool changed = false;
+                foreach (XElement fill in document.Descendants(S + "patternFill"))
+                {
+                    if (!IsOldHighlight(fill.Element(S + "fgColor"), theme, indexed, false) &&
+                        !IsOldHighlight(fill.Element(S + "bgColor"), theme, indexed, false)) continue;
+                    fill.RemoveNodes();
+                    fill.SetAttributeValue("patternType", "none");
+                    changed = true;
+                }
+                foreach (XElement color in document.Descendants(S + "color").Where(c =>
+                    c.Parent.Name == S + "font" || c.Parent.Name == S + "rPr").ToList())
+                {
+                    if (!IsOldHighlight(color, theme, indexed, true)) continue;
+                    color.ReplaceWith(new XElement(S + "color", new XAttribute("auto", "1")));
+                    changed = true;
+                }
+                if (changed)
+                    using (Stream output = part.GetStream(FileMode.Create, FileAccess.Write)) document.Save(output);
+            }
         }
 
         private static void HighlightChanges(Package package, IEnumerable<XElement> cells)
@@ -186,15 +399,16 @@ namespace DocAutomate.Services
             using (Stream output = stylesPart.GetStream(FileMode.Create, FileAccess.Write)) styles.Save(output);
         }
 
-        public byte[] Apply(string excelPath, string powerpointPath)
+        public byte[] Apply(string excelPath, string powerpointPath, string part = null, string crc = null, string model = null)
         {
-            var changes = ReadChanges(powerpointPath);
+            var changes = string.IsNullOrWhiteSpace(powerpointPath) ? new List<Change>() : ReadChanges(powerpointPath);
             using (var buffer = new MemoryStream())
             {
                 using (Stream input = File.OpenRead(excelPath)) input.CopyTo(buffer);
                 buffer.Position = 0;
                 using (Package package = Package.Open(buffer, FileMode.Open, FileAccess.ReadWrite))
                 {
+                    ClearOldHighlights(package);
                     var shared = new List<string>();
                     var sharedPart = package.GetParts().FirstOrDefault(p => p.ContentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml");
                     if (sharedPart != null) shared = Read(sharedPart).Descendants(S + "si").Select(s => Text(s, S)).ToList();
@@ -207,13 +421,36 @@ namespace DocAutomate.Services
                         foreach (XDocument sheet in sheets.Values)
                         {
                             var cells = sheet.Descendants(S + "c").ToDictionary(c => (string)c.Attribute("r"));
+                            // Step headers span an ID column and a label column.
+                            var stepHeaders = cells.Values.Where(c =>
+                                CellText(c, shared).Trim().Equals("2Step", StringComparison.OrdinalIgnoreCase)).ToList();
                             foreach (XElement cell in cells.Values.Where(c => CellText(c, shared) == change.Setting))
                             {
                                 string address = (string)cell.Attribute("r");
                                 int column = Column(address), row = Row(address);
-                                if (column < 2 || CellText(GroupCell(sheet, cells, Address(column - 1, row)), shared) != change.Group) continue;
+                                int groupColumn = column - 1, valueColumn = column + 1;
+                                if (stepHeaders.Count > 0)
+                                {
+                                    XElement header = stepHeaders.Where(h => Row((string)h.Attribute("r")) < row)
+                                        .OrderByDescending(h => Row((string)h.Attribute("r"))).FirstOrDefault();
+                                    if (header == null) continue;
+                                    int headerRow = Row((string)header.Attribute("r"));
+                                    XElement settingHeader = cells.Values.FirstOrDefault(h =>
+                                        Row((string)h.Attribute("r")) == headerRow &&
+                                        CellText(h, shared).Trim().Equals("4Step", StringComparison.OrdinalIgnoreCase));
+                                    XElement valueHeader = cells.Values.FirstOrDefault(h =>
+                                        Row((string)h.Attribute("r")) == headerRow &&
+                                        IsValueHeader(CellText(h, shared)));
+                                    if (settingHeader == null || valueHeader == null)
+                                        throw new InvalidOperationException("The step table requires 4Step and a value-column header.");
+                                    if (column != Column((string)settingHeader.Attribute("r")) + 1) continue;
+                                    groupColumn = Column((string)header.Attribute("r")) + 1;
+                                    valueColumn = Column((string)valueHeader.Attribute("r"));
+                                }
+                                if (groupColumn < 1 ||
+                                    CellText(GroupCell(sheet, cells, Address(groupColumn, row)), shared) != change.Group) continue;
                                 XElement target;
-                                if (cells.TryGetValue(Address(column + 1, row), out target)) matches.Add(target);
+                                if (cells.TryGetValue(Address(valueColumn, row), out target)) matches.Add(target);
                             }
                         }
                         string label = change.Group + " / " + change.Setting;
@@ -246,10 +483,12 @@ namespace DocAutomate.Services
                         }
                     }
                     HighlightChanges(package, edits.Keys);
-                    foreach (var sheet in sheets.Where(s => s.Value.Descendants(S + "c").Any(edits.ContainsKey)))
+                    var clearedSheets = new HashSet<XDocument>(sheets.Values.Where(s => ClearCheckResults(s, shared)));
+                    clearedSheets.UnionWith(sheets.Values.Where(s => FillDocumentInputs(s, shared, part, crc, model)));
+                    foreach (var sheet in sheets.Where(s => clearedSheets.Contains(s.Value) || s.Value.Descendants(S + "c").Any(edits.ContainsKey)))
                         using (Stream output = sheet.Key.GetStream(FileMode.Create, FileAccess.Write)) sheet.Value.Save(output);
                     // Ask Excel to refresh formulas that depend on the changed values.
-                    if (edits.Count > 0)
+                    if (edits.Count > 0 || clearedSheets.Count > 0)
                     {
                         var workbookPart = package.GetPart(new Uri("/xl/workbook.xml", UriKind.Relative));
                         XDocument workbook = Read(workbookPart);

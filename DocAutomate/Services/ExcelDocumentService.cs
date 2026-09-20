@@ -26,21 +26,21 @@ namespace DocAutomate.Services
             return Path.Combine(Path.GetDirectoryName(sourceFile), string.Join("_", nameParts) + "_" + selectedDate.ToString("yyMMdd", System.Globalization.CultureInfo.InvariantCulture) + extension);
         }
 
-        public void Generate(string sourceFile, string destination, string powerpointFile = null)
+        public void Generate(string sourceFile, string destination, string powerpointFile = null, string part = null, string crc = null, string model = null)
         {
             string extension = GetSupportedExtension(sourceFile);
             if (!string.Equals(extension, Path.GetExtension(destination), StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("The generated file must use the same Excel format as the source.", "destination");
 
-            if (string.IsNullOrWhiteSpace(powerpointFile))
+            if (part == null && crc == null && model == null && string.IsNullOrWhiteSpace(powerpointFile) && string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
             {
                 File.Copy(sourceFile, destination, false);
                 return;
             }
             if (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("PowerPoint updates require .xlsx or .xlsm. Save the .xls workbook in a modern Excel format first.");
+                throw new InvalidOperationException("Workbook updates require .xlsx or .xlsm. Save the .xls workbook in a modern Excel format first.");
 
-            byte[] updated = new SoftwareTableService().Apply(sourceFile, powerpointFile);
+            byte[] updated = new SoftwareTableService().Apply(sourceFile, powerpointFile, part, crc, model);
             using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write))
                 output.Write(updated, 0, updated.Length);
         }

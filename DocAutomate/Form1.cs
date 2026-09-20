@@ -53,6 +53,15 @@ namespace DocAutomate
                 return;
             }
 
+            string modelName = textBox1.Text.Trim();
+            if (!ExcelDocumentService.IsValidNamePart(modelName))
+            {
+                ShowWarning("Please enter a Model that can be used in a file name (no \\/:*?\"<>| characters or trailing period).",
+                    "Invalid Model");
+                textBox1.Focus();
+                return;
+            }
+
             var nameInputs = new[] { firstNameTextBox, secondNameTextBox };
             var nameParts = new string[nameInputs.Length];
             for (int i = 0; i < nameInputs.Length; i++)
@@ -64,8 +73,17 @@ namespace DocAutomate
 
                 if (!ExcelDocumentService.IsValidNamePart(part))
                 {
-                    ShowWarning("Please enter a valid name in " + (i == 0 ? "Name 1" : "Name 2") + ".",
+                    ShowWarning("Please enter a valid name in " + (i == 0 ? "Part" : "CRC") + ".",
                         "Invalid file name");
+                    nameInputs[i].Focus();
+                    return;
+                }
+
+                string requiredPrefix = i == 0 ? "SAA" : "0x";
+                if (!part.StartsWith(requiredPrefix, StringComparison.Ordinal))
+                {
+                    ShowWarning((i == 0 ? "Part" : "CRC") + " must start with " + requiredPrefix + ".",
+                        "Invalid " + (i == 0 ? "Part" : "CRC"));
                     nameInputs[i].Focus();
                     return;
                 }
@@ -82,7 +100,7 @@ namespace DocAutomate
 
             try
             {
-                string destination = documentService.GetDestination(sourceFileTextBox.Text, nameParts, selectedDateCalendar.SelectionStart);
+                string destination = documentService.GetDestination(sourceFileTextBox.Text, new[] { modelName, nameParts[0], nameParts[1] }, selectedDateCalendar.SelectionStart);
                 if (File.Exists(destination) || Directory.Exists(destination))
                 {
                     ShowWarning("A file or folder already exists at:\n" + destination
@@ -90,7 +108,7 @@ namespace DocAutomate
                     return;
                 }
 
-                documentService.Generate(sourceFileTextBox.Text, destination, powerpointTextBox.Text.Trim());
+                documentService.Generate(sourceFileTextBox.Text, destination, powerpointTextBox.Text.Trim(), nameParts[0], nameParts[1], textBox1.Text);
                 try
                 {
                     Process.Start(new ProcessStartInfo
@@ -111,6 +129,16 @@ namespace DocAutomate
                 MessageBox.Show(this, "Could not generate the Excel document.\n" + ex.Message,
                     "Generate failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void textBox1_TextChanged(object sender, EventArgs e)
+        {
+            // The Model value is read when Generate is clicked.
+        }
+
+        private void label1_Click(object sender, EventArgs e)
+        {
+            // No action is needed when the Model label is clicked.
         }
 
         private void ShowWarning(string message, string title)
