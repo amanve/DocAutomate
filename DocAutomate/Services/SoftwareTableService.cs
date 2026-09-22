@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -33,7 +33,7 @@ namespace DocAutomate.Services
         private static bool HasSoftwareChangesTitle(XDocument document)
         {
             return document.Descendants(P + "sp").Any(shape =>
-                string.Equals(Text(shape, A).Trim(), "Software Changes", StringComparison.OrdinalIgnoreCase));
+                Normalize(Text(shape, A)) == "softwarechanges");
         }
 
         private static PackagePart RelatedPart(Package package, PackagePart part, string relationshipName)
@@ -58,10 +58,124 @@ namespace DocAutomate.Services
             return master != null && HasSoftwareChangesTitle(Read(master));
         }
 
+        // Header aliases are independent of the selected interface language.
+        // Never translate user data through this map.
+        private static readonly Dictionary<string, string> KoreanHeaders = new Dictionary<string, string>
+        {
+            { "\uc18c\ud504\ud2b8\uc6e8\uc5b4\ubcc0\uacbd", "softwarechanges" },
+            { "\uc18c\ud504\ud2b8\uc6e8\uc5b4\ubcc0\uacbd\uc0ac\ud56d", "softwarechanges" },
+            { "\ubcc0\uacbd\uc804", "asis" },
+            { "\ud604\uc7ac\uac12", "asis" },
+            { "\uae30\uc874\uac12", "asis" },
+            { "\ubcc0\uacbd\ud6c4", "tobe" },
+            { "\ubcc0\uacbd\uac12", "tobe" },
+            { "\uadf8\ub8f9", "group" },
+            { "\uadf8\ub8f9\uba85", "groupname" },
+            { "\uc124\uc815", "setting" },
+            { "\uc124\uc815\uba85", "settingname" },
+            { "\ud56d\ubaa9", "setting" },
+            { "\ub9e4\uac1c\ubcc0\uc218", "parameter" },
+            { "\ubd80\ud488", "part" },
+            { "\ubd80\ud488\ubc88\ud638", "part" },
+            { "\uccb4\ud06c\uc12c", "crc" },
+            { "\uac12", "value" },
+            { "\uc785\ub825\uac12", "value" },
+            { "\uc801\uc6a9\uac12", "value" },
+            { "1\ub2e8\uacc4", "step1" },
+            { "\ub2e8\uacc41", "step1" },
+            { "2\ub2e8\uacc4", "step2" },
+            { "\ub2e8\uacc42", "step2" },
+            { "3\ub2e8\uacc4", "step3" },
+            { "\ub2e8\uacc43", "step3" },
+            { "4\ub2e8\uacc4", "step4" },
+            { "\ub2e8\uacc44", "step4" },
+            { "\ud655\uc7781", "check1" },
+            { "\uac80\uc0ac1", "check1" },
+            { "\ud655\uc7782", "check2" },
+            { "\uac80\uc0ac2", "check2" },
+            { "\ud655\uc7783", "check3" },
+            { "\uac80\uc0ac3", "check3" }
+        };
+
+        private static string Identity(string value)
+        {
+            return value.Trim().Normalize(System.Text.NormalizationForm.FormC);
+        }
+
+        private static string Normalize(string value)
+        {
+            string text = new string(value.Normalize(System.Text.NormalizationForm.FormC)
+                .Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+            string canonical;
+            return KoreanHeaders.TryGetValue(text, out canonical) ? canonical : text;
+        }
+
+        private static bool IsNumber(string value)
+        {
+            decimal number;
+            return decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+        }
+
+        private static bool SameValue(string left, string right)
+        {
+            decimal a, b;
+            return Identity(left) == Identity(right) ||
+                (decimal.TryParse(left, NumberStyles.Float, CultureInfo.InvariantCulture, out a) &&
+                 decimal.TryParse(right, NumberStyles.Float, CultureInfo.InvariantCulture, out b) && a == b);
+        }
+
+        private static bool IsStepHeader(string value)
+        {
+            string text = Normalize(value);
+            return new[] { "step1", "step2", "step3", "step4", "1step", "2step", "3step", "4step" }.Contains(text);
+        }
+
+        private static int HeaderColumn(List<string> headers, params string[] aliases)
+        {
+            var matches = headers.Select((h, i) => new { Header = h, Index = i }).Where(h => aliases.Contains(h.Header)).ToList();
+            if (matches.Count > 1) throw new InvalidOperationException(AppText.Get("Ambiguous group or setting headers."));
+            return matches.Count == 0 ? -1 : matches[0].Index;
+        }
+
+        private static int ExternalHeaderColumn(XDocument slide, XElement table, string header)
+        {
+            XElement frame = table.Ancestors(P + "graphicFrame").FirstOrDefault();
+            if (frame == null || frame.Ancestors(P + "grpSp").Any()) return -1;
+            XElement transform = frame.Element(P + "xfrm");
+            if (transform == null) return -1;
+            long x = (long)transform.Element(A + "off").Attribute("x");
+            long y = (long)transform.Element(A + "off").Attribute("y");
+            var widths = table.Element(A + "tblGrid").Elements(A + "gridCol").Select(c => (long)c.Attribute("w")).ToList();
+            var candidates = new List<Tuple<long, int>>();
+            foreach (XElement shape in slide.Descendants(P + "sp").Where(s => Normalize(Text(s, A)) == header && !s.Ancestors(P + "grpSp").Any()))
+            {
+                XElement bounds = shape.Descendants(A + "xfrm").FirstOrDefault();
+                if (bounds == null) continue;
+                long left = (long)bounds.Element(A + "off").Attribute("x");
+                long top = (long)bounds.Element(A + "off").Attribute("y");
+                long right = left + (long)bounds.Element(A + "ext").Attribute("cx");
+                long bottom = top + (long)bounds.Element(A + "ext").Attribute("cy");
+                if (bottom > y || y - bottom > 914400) continue;
+                long edge = x, best = 0;
+                int index = -1;
+                for (int c = 0; c < widths.Count; c++)
+                {
+                    long overlap = Math.Max(0, Math.Min(right, edge + widths[c]) - Math.Max(left, edge));
+                    if (overlap > best) { best = overlap; index = c; }
+                    else if (overlap == best && overlap > 0) index = -1;
+                    edge += widths[c];
+                }
+                if (index >= 0) candidates.Add(Tuple.Create(y - bottom, index));
+            }
+            if (candidates.Count == 0) return -1;
+            var closest = candidates.Where(c => c.Item1 == candidates.Min(v => v.Item1)).Select(c => c.Item2).Distinct().ToList();
+            return closest.Count == 1 ? closest[0] : -1;
+        }
+
         private static List<Change> ReadChanges(string path)
         {
             if (!string.Equals(Path.GetExtension(path), ".pptx", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Please select a .pptx PowerPoint file.");
+                throw new InvalidOperationException(AppText.Get("Please select a .pptx PowerPoint file."));
             var changes = new List<Change>();
             using (Package package = Package.Open(path, FileMode.Open, FileAccess.Read))
             {
@@ -71,31 +185,67 @@ namespace DocAutomate.Services
                     if (!IsSoftwareChangesSlide(package, part, slide)) continue;
                     foreach (XElement table in slide.Descendants(A + "tbl"))
                     {
-                        string group = null;
-                        foreach (XElement row in table.Elements(A + "tr"))
+                        var rows = table.Elements(A + "tr").Select(r => r.Elements(A + "tc").ToList()).ToList();
+                        if (rows.Count == 0) continue;
+                        string location = part.Uri + AppText.Get(", table ") + (slide.Descendants(A + "tbl").ToList().IndexOf(table) + 1);
+                        int before = -1, after = -1, groupColumn = -1, settingColumn = -1, start = 0;
+                        for (int r = 0; r < rows.Count; r++)
                         {
-                            var cells = row.Elements(A + "tc").ToList();
-                            if (cells.Count != 4)
-                                throw new InvalidOperationException("Software tables must have four columns: group, setting, As Is, To Be.");
-                            string[] values = cells.Select(c => Text(c, A)).ToArray();
+                            var headers = rows[r].Select(c => Normalize(Text(c, A))).ToList();
+                            if (!headers.Contains("asis") || !headers.Contains("tobe")) continue;
+                            if (headers.Count(h => h == "asis") != 1 || headers.Count(h => h == "tobe") != 1)
+                                throw new InvalidOperationException(location + AppText.Get(": ambiguous value headers."));
+                            before = headers.IndexOf("asis"); after = headers.IndexOf("tobe");
+                            groupColumn = HeaderColumn(headers, "group", "groupname");
+                            settingColumn = HeaderColumn(headers, "setting", "settingname", "parameter");
+                            start = r + 1;
+                            break;
+                        }
+                        if (before < 0)
+                        {
+                            before = ExternalHeaderColumn(slide, table, "asis");
+                            after = ExternalHeaderColumn(slide, table, "tobe");
+                        }
+                        if (before < 0 || after < 0 || before == after)
+                            throw new InvalidOperationException(location + AppText.Get(": cannot identify As Is and To Be columns."));
+                        // Headerless templates may contain ID and spacer columns. Only infer
+                        // labels when exactly two nonnumeric columns precede the values.
+                        if (groupColumn < 0 || settingColumn < 0)
+                        {
+                            var labels = Enumerable.Range(0, Math.Min(before, after)).Where(c =>
+                                rows.Skip(start).Any(r => r.Count > c && !string.IsNullOrWhiteSpace(Text(r[c], A))) &&
+                                rows.Skip(start).Where(r => r.Count > c).All(r =>
+                                    string.IsNullOrWhiteSpace(Text(r[c], A)) || !IsNumber(Text(r[c], A)))).ToList();
+                            if (labels.Count != 2)
+                                throw new InvalidOperationException(location + AppText.Get(": group and setting columns require explicit headers."));
+                            if (groupColumn < 0) groupColumn = labels[0];
+                            if (settingColumn < 0) settingColumn = labels[1];
+                        }
+                        string group = null;
+                        for (int r = start; r < rows.Count; r++)
+                        {
+                            var cells = rows[r];
+                            string context = location + AppText.Get(", row ") + (r + 1);
+                            if (cells.Count <= new[] { before, after, groupColumn, settingColumn }.Max())
+                                throw new InvalidOperationException(context + AppText.Get(": missing required columns."));
+                            string[] values = cells.Select(c => Text(c, A).Trim()).ToArray();
                             if (values.All(string.IsNullOrWhiteSpace)) continue;
-                            if (values[2].Trim().Equals("As Is", StringComparison.OrdinalIgnoreCase) &&
-                                values[3].Trim().Equals("To Be", StringComparison.OrdinalIgnoreCase)) continue;
-                            if (!string.IsNullOrWhiteSpace(values[0])) group = values[0];
-                            else if ((string)cells[0].Attribute("vMerge") != "1" && (string)cells[0].Attribute("vMerge") != "true")
-                                throw new InvalidOperationException("A blank group must be part of a vertically merged cell.");
-                            if (string.IsNullOrWhiteSpace(group) || string.IsNullOrWhiteSpace(values[1]) ||
-                                string.IsNullOrWhiteSpace(values[2]) || string.IsNullOrWhiteSpace(values[3]))
-                                throw new InvalidOperationException("Every software row needs a group, setting, As Is and To Be value.");
-                            if (changes.Any(c => c.Group == group && c.Setting == values[1]))
-                                throw new InvalidOperationException("Duplicate PowerPoint setting: " + group + " / " + values[1]);
-                            changes.Add(new Change { Group = group, Setting = values[1], Before = values[2], After = values[3] });
+                            if (Normalize(values[before]) == "asis" && Normalize(values[after]) == "tobe") { group = null; continue; }
+                            if (!string.IsNullOrWhiteSpace(values[groupColumn])) group = values[groupColumn];
+                            else if ((string)cells[groupColumn].Attribute("vMerge") != "1" && (string)cells[groupColumn].Attribute("vMerge") != "true")
+                                throw new InvalidOperationException(context + AppText.Get(": a blank group must be vertically merged."));
+                            if (string.IsNullOrWhiteSpace(group) || string.IsNullOrWhiteSpace(values[settingColumn]) ||
+                                string.IsNullOrWhiteSpace(values[before]) || string.IsNullOrWhiteSpace(values[after]))
+                                throw new InvalidOperationException(context + AppText.Get(": missing group, setting, As Is or To Be value."));
+                            if (changes.Any(c => Identity(c.Group) == Identity(group) && Identity(c.Setting) == Identity(values[settingColumn])))
+                                throw new InvalidOperationException(context + AppText.Get(": duplicate setting ") + group + " / " + values[settingColumn]);
+                            changes.Add(new Change { Group = group, Setting = values[settingColumn], Before = values[before], After = values[after] });
                         }
                     }
                 }
             }
             if (changes.Count == 0)
-                throw new InvalidOperationException("No data table found on a Software Changes slide.");
+                throw new InvalidOperationException(AppText.Get("No data table found on a Software Changes slide."));
             return changes;
         }
 
@@ -121,7 +271,7 @@ namespace DocAutomate.Services
         private static bool IsValueHeader(string text)
         {
             text = text.Trim();
-            return text.StartsWith("Fill Value from ", StringComparison.OrdinalIgnoreCase) ||
+            return Normalize(text) == "value" || text.StartsWith("Fill Value from ", StringComparison.OrdinalIgnoreCase) ||
                 (text.StartsWith("SAA", StringComparison.Ordinal) &&
                  text.IndexOf(" (0x", StringComparison.Ordinal) > 3 &&
                  text.EndsWith(")", StringComparison.Ordinal));
@@ -142,8 +292,8 @@ namespace DocAutomate.Services
                     Row((string)c.Attribute("r")) > headerRow))
                 {
                     string text = CellText(label, shared).Trim();
-                    string value = text.Equals("Part", StringComparison.OrdinalIgnoreCase) ? part :
-                        text.Equals("CRC", StringComparison.OrdinalIgnoreCase) ? crc : null;
+                    string value = Normalize(text) == "part" ? part :
+                        Normalize(text) == "crc" ? crc : null;
                     if (value == null) continue;
                     string address = Address(valueColumn, Row((string)label.Attribute("r")));
                     XElement target = cells.FirstOrDefault(c => (string)c.Attribute("r") == address);
@@ -191,7 +341,7 @@ namespace DocAutomate.Services
         {
             var cells = sheet.Descendants(S + "c").ToList();
             var headers = cells.Where(c =>
-                new[] { "Check1", "Check2", "Check3" }.Contains(CellText(c, shared).Trim()))
+                new[] { "check1", "check2", "check3" }.Contains(Normalize(CellText(c, shared))))
                 .Select(c => new { Column = Column((string)c.Attribute("r")), Row = Row((string)c.Attribute("r")) })
                 .ToList();
             bool cleared = false;
@@ -361,7 +511,7 @@ namespace DocAutomate.Services
             XElement fills = styles.Root.Element(S + "fills");
             XElement formats = styles.Root.Element(S + "cellXfs");
             if (fonts == null || fills == null || formats == null)
-                throw new InvalidOperationException("The workbook is missing required cell formatting definitions.");
+                throw new InvalidOperationException(AppText.Get("The workbook is missing required cell formatting definitions."));
 
             int yellowFillId = fills.Elements(S + "fill").Count();
             fills.Add(new XElement(S + "fill", new XElement(S + "patternFill",
@@ -421,47 +571,46 @@ namespace DocAutomate.Services
                         foreach (XDocument sheet in sheets.Values)
                         {
                             var cells = sheet.Descendants(S + "c").ToDictionary(c => (string)c.Attribute("r"));
-                            // Step headers span an ID column and a label column.
-                            var stepHeaders = cells.Values.Where(c =>
-                                CellText(c, shared).Trim().Equals("2Step", StringComparison.OrdinalIgnoreCase)).ToList();
-                            foreach (XElement cell in cells.Values.Where(c => CellText(c, shared) == change.Setting))
+                            foreach (XElement cell in cells.Values.Where(c => Identity(CellText(c, shared)) == Identity(change.Setting)))
                             {
                                 string address = (string)cell.Attribute("r");
                                 int column = Column(address), row = Row(address);
-                                int groupColumn = column - 1, valueColumn = column + 1;
-                                if (stepHeaders.Count > 0)
-                                {
-                                    XElement header = stepHeaders.Where(h => Row((string)h.Attribute("r")) < row)
-                                        .OrderByDescending(h => Row((string)h.Attribute("r"))).FirstOrDefault();
-                                    if (header == null) continue;
-                                    int headerRow = Row((string)header.Attribute("r"));
-                                    XElement settingHeader = cells.Values.FirstOrDefault(h =>
-                                        Row((string)h.Attribute("r")) == headerRow &&
-                                        CellText(h, shared).Trim().Equals("4Step", StringComparison.OrdinalIgnoreCase));
-                                    XElement valueHeader = cells.Values.FirstOrDefault(h =>
-                                        Row((string)h.Attribute("r")) == headerRow &&
-                                        IsValueHeader(CellText(h, shared)));
-                                    if (settingHeader == null || valueHeader == null)
-                                        throw new InvalidOperationException("The step table requires 4Step and a value-column header.");
-                                    if (column != Column((string)settingHeader.Attribute("r")) + 1) continue;
-                                    groupColumn = Column((string)header.Attribute("r")) + 1;
-                                    valueColumn = Column((string)valueHeader.Attribute("r"));
-                                }
-                                if (groupColumn < 1 ||
-                                    CellText(GroupCell(sheet, cells, Address(groupColumn, row)), shared) != change.Group) continue;
-                                XElement target;
-                                if (cells.TryGetValue(Address(valueColumn, row), out target)) matches.Add(target);
+                                // Resolve every ancestor column through its merged anchor. This
+                                // supports different hierarchy depths and intervening columns.
+                                bool groupMatches = Enumerable.Range(1, column - 1).Any(c =>
+                                    Identity(CellText(GroupCell(sheet, cells, Address(c, row)), shared)) == Identity(change.Group));
+                                if (!groupMatches) continue;
+                                var valueHeaders = cells.Values.Where(h => Row((string)h.Attribute("r")) < row &&
+                                    Column((string)h.Attribute("r")) > column && IsValueHeader(CellText(h, shared))).ToList();
+                                int nearestHeaderRow = valueHeaders.Count == 0 ? -1 : valueHeaders.Max(h => Row((string)h.Attribute("r")));
+                                var valueColumns = valueHeaders.Where(h => Row((string)h.Attribute("r")) == nearestHeaderRow)
+                                    .Select(h => Column((string)h.Attribute("r"))).ToList();
+                                // Without a value header, infer only from a unique As Is match
+                                // to the right of the setting, excluding hierarchy columns.
+                                int hierarchyEnd = cells.Values.Where(h => Row((string)h.Attribute("r")) < row && IsStepHeader(CellText(h, shared)))
+                                    .Select(h => Column((string)h.Attribute("r"))).DefaultIfEmpty(0).Max();
+                                foreach (XElement target in cells.Values.Where(c => Row((string)c.Attribute("r")) == row &&
+                                    Column((string)c.Attribute("r")) > column &&
+                                    (valueColumns.Count > 0 ? valueColumns.Contains(Column((string)c.Attribute("r"))) :
+                                        Column((string)c.Attribute("r")) > hierarchyEnd) &&
+                                    SameValue(CellText(c, shared), change.Before)))
+                                    matches.Add(target);
                             }
                         }
+                        matches = matches.Distinct().ToList();
                         string label = change.Group + " / " + change.Setting;
                         if (matches.Count != 1)
-                            throw new InvalidOperationException("Expected one Excel match for " + label + "; found " + matches.Count + ".");
+                            throw new InvalidOperationException(AppText.Get("Expected one Excel match for {0}; found {1}.", label, matches.Count));
                         XElement match = matches[0];
                         if (match.Element(S + "f") != null)
-                            throw new InvalidOperationException("Cannot replace a formula for " + label + ".");
-                        if (CellText(match, shared) != change.Before)
-                            throw new InvalidOperationException("Excel value for " + label + " does not match PowerPoint As Is (" + change.Before + ").");
-                        if (change.Before != change.After) edits.Add(match, change.After);
+                            throw new InvalidOperationException(AppText.Get("Cannot replace a formula for {0}.", label));
+                        if (!SameValue(CellText(match, shared), change.Before))
+                            throw new InvalidOperationException(AppText.Get("Excel value for {0} does not match PowerPoint As Is ({1}).", label, change.Before));
+                        if (!SameValue(change.Before, change.After))
+                        {
+                            if (edits.ContainsKey(match)) throw new InvalidOperationException(AppText.Get("Multiple changes target the same Excel cell: {0}", label));
+                            edits.Add(match, change.After);
+                        }
                     }
                     foreach (var edit in edits)
                     {

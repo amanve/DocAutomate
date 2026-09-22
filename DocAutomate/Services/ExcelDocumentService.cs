@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 
 namespace DocAutomate.Services
@@ -30,7 +30,7 @@ namespace DocAutomate.Services
         {
             string extension = GetSupportedExtension(sourceFile);
             if (!string.Equals(extension, Path.GetExtension(destination), StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("The generated file must use the same Excel format as the source.", "destination");
+                throw new ArgumentException(AppText.Get("The generated file must use the same Excel format as the source."), "destination");
 
             if (part == null && crc == null && model == null && string.IsNullOrWhiteSpace(powerpointFile) && string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
             {
@@ -38,7 +38,7 @@ namespace DocAutomate.Services
                 return;
             }
             if (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Workbook updates require .xlsx or .xlsm. Save the .xls workbook in a modern Excel format first.");
+                throw new InvalidOperationException(AppText.Get("Workbook updates require .xlsx or .xlsm. Save the .xls workbook in a modern Excel format first."));
 
             byte[] updated = new SoftwareTableService().Apply(sourceFile, powerpointFile, part, crc, model);
             using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write))
@@ -49,7 +49,7 @@ namespace DocAutomate.Services
         {
             string extension = Path.GetExtension(sourceFile);
             if (!IsSupportedExtension(extension))
-                throw new ArgumentException("Please select an .xlsx, .xlsm, or .xls file.", "sourceFile");
+                throw new ArgumentException(AppText.Get("Please select an .xlsx, .xlsm, or .xls file."), "sourceFile");
 
             return extension;
         }

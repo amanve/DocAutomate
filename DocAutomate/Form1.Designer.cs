@@ -42,6 +42,8 @@
             this.powerpointLabel = new System.Windows.Forms.Label();
             this.textBox1 = new System.Windows.Forms.TextBox();
             this.label1 = new System.Windows.Forms.Label();
+            this.languageComboBox = new System.Windows.Forms.ComboBox();
+            this.languageLabel = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // browseButton
@@ -162,12 +164,33 @@
             this.label1.TabIndex = 9;
             this.label1.Text = "Model";
             this.label1.Click += new System.EventHandler(this.label1_Click);
+            //
+            // languageComboBox
+            //
+            this.languageComboBox.AccessibleName = "Language / \uC5B8\uC5B4";
+            this.languageComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.languageComboBox.FormattingEnabled = true;
+            this.languageComboBox.Items.AddRange(new object[] { "English", "\uD55C\uAD6D\uC5B4" });
+            this.languageComboBox.Location = new System.Drawing.Point(576, 40);
+            this.languageComboBox.Name = "languageComboBox";
+            this.languageComboBox.Size = new System.Drawing.Size(170, 28);
+            this.languageComboBox.TabIndex = 10;
+            this.languageComboBox.SelectedIndexChanged += new System.EventHandler(this.languageComboBox_SelectedIndexChanged);
+            //
+            // languageLabel
+            //
+            this.languageLabel.AutoSize = true;
+            this.languageLabel.Location = new System.Drawing.Point(440, 44);
+            this.languageLabel.Name = "languageLabel";
+            this.languageLabel.Text = "Language / \uC5B8\uC5B4";
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(825, 517);
+            this.Controls.Add(this.languageComboBox);
+            this.Controls.Add(this.languageLabel);
             this.Controls.Add(this.label1);
             this.Controls.Add(this.textBox1);
             this.Controls.Add(this.powerpointLabel);
@@ -191,6 +214,8 @@
 
         #endregion
 
+        private System.Windows.Forms.ComboBox languageComboBox;
+        private System.Windows.Forms.Label languageLabel;
         private System.Windows.Forms.TextBox powerpointTextBox;
         private System.Windows.Forms.Button powerpointBrowseButton;
         private System.Windows.Forms.Label powerpointLabel;

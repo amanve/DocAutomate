@@ -1,4 +1,4 @@
-using DocAutomate.Services;
+﻿using DocAutomate.Services;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -13,15 +13,50 @@ namespace DocAutomate
         public Form1()
         {
             InitializeComponent();
-            selectedDateCalendar.MinDate = DateTime.Today;
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            if (System.ComponentModel.LicenseManager.UsageMode != System.ComponentModel.LicenseUsageMode.Designtime && !DesignMode)
+            {
+                languageComboBox.SelectedIndex = AppText.IsKorean ? 1 : 0;
+                ApplyLanguage();
+                selectedDateCalendar.MinDate = DateTime.Today;
+            }
+            base.OnLoad(e);
+        }
+
+        private void languageComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (System.ComponentModel.LicenseManager.UsageMode == System.ComponentModel.LicenseUsageMode.Designtime || DesignMode)
+                return;
+            AppText.IsKorean = languageComboBox.SelectedIndex == 1;
+            ApplyLanguage();
+        }
+
+        private void ApplyLanguage()
+        {
+            SuspendLayout();
+            Text = AppText.Get("Excel Document Generator");
+            browseButton.Text = powerpointBrowseButton.Text = AppText.Get("Browse");
+            generateButton.Text = AppText.Get("Generate");
+            sourceFileLabel.Text = AppText.Get("Excel file");
+            powerpointLabel.Text = AppText.Get("PowerPoint file");
+            firstNameLabel.Text = AppText.Get("Part");
+            secondNameLabel.Text = AppText.Get("CRC");
+            label1.Text = AppText.Get("Model");
+            // Malgun Gothic supports Hangul and Latin text on Windows.
+            if (AppText.IsKorean && Font.Name != "Malgun Gothic")
+                Font = new System.Drawing.Font("Malgun Gothic", 9F);
+            ResumeLayout(true);
         }
 
         private void browseButton_Click(object sender, EventArgs e)
         {
             using (var dialog = new OpenFileDialog())
             {
-                dialog.Title = "Select an Excel file";
-                dialog.Filter = "Excel workbooks (*.xlsx;*.xlsm;*.xls)|*.xlsx;*.xlsm;*.xls";
+                dialog.Title = AppText.Get("Select an Excel file");
+                dialog.Filter = AppText.Get("Excel workbooks (*.xlsx;*.xlsm;*.xls)|*.xlsx;*.xlsm;*.xls");
                 dialog.DefaultExt = "xlsx";
                 dialog.CheckFileExists = true;
                 dialog.CheckPathExists = true;
@@ -36,8 +71,8 @@ namespace DocAutomate
         {
             using (var dialog = new OpenFileDialog())
             {
-                dialog.Title = "Select the Software changes PowerPoint";
-                dialog.Filter = "PowerPoint presentations (*.pptx)|*.pptx";
+                dialog.Title = AppText.Get("Select the Software changes PowerPoint");
+                dialog.Filter = AppText.Get("PowerPoint presentations (*.pptx)|*.pptx");
                 dialog.CheckFileExists = true;
                 dialog.RestoreDirectory = true;
                 if (dialog.ShowDialog(this) == DialogResult.OK)
@@ -49,15 +84,15 @@ namespace DocAutomate
         {
             if (string.IsNullOrWhiteSpace(sourceFileTextBox.Text))
             {
-                ShowWarning("Please select an Excel file first.", "Select a file");
+                ShowWarning(AppText.Get("Please select an Excel file first."), AppText.Get("Select a file"));
                 return;
             }
 
             string modelName = textBox1.Text.Trim();
             if (!ExcelDocumentService.IsValidNamePart(modelName))
             {
-                ShowWarning("Please enter a Model that can be used in a file name (no \\/:*?\"<>| characters or trailing period).",
-                    "Invalid Model");
+                ShowWarning(AppText.Get("Please enter a Model that can be used in a file name (no \\/:*?\"<>| characters or trailing period)."),
+                    AppText.Get("Invalid Model"));
                 textBox1.Focus();
                 return;
             }
@@ -73,8 +108,8 @@ namespace DocAutomate
 
                 if (!ExcelDocumentService.IsValidNamePart(part))
                 {
-                    ShowWarning("Please enter a valid name in " + (i == 0 ? "Part" : "CRC") + ".",
-                        "Invalid file name");
+                    ShowWarning(AppText.Get("Please enter a valid name in {0}.", AppText.Get(i == 0 ? "Part" : "CRC")),
+                        AppText.Get("Invalid file name"));
                     nameInputs[i].Focus();
                     return;
                 }
@@ -82,8 +117,8 @@ namespace DocAutomate
                 string requiredPrefix = i == 0 ? "SAA" : "0x";
                 if (!part.StartsWith(requiredPrefix, StringComparison.Ordinal))
                 {
-                    ShowWarning((i == 0 ? "Part" : "CRC") + " must start with " + requiredPrefix + ".",
-                        "Invalid " + (i == 0 ? "Part" : "CRC"));
+                    ShowWarning(AppText.Get("{0} must start with {1}.", AppText.Get(i == 0 ? "Part" : "CRC"), requiredPrefix),
+                        AppText.Get("Invalid {0}", AppText.Get(i == 0 ? "Part" : "CRC")));
                     nameInputs[i].Focus();
                     return;
                 }
@@ -94,7 +129,7 @@ namespace DocAutomate
             selectedDateCalendar.MinDate = DateTime.Today;
             if (selectedDateCalendar.SelectionStart.Date < DateTime.Today)
             {
-                ShowWarning("Please select today or a future date.", "Invalid date");
+                ShowWarning(AppText.Get("Please select today or a future date."), AppText.Get("Invalid date"));
                 return;
             }
 
@@ -103,8 +138,7 @@ namespace DocAutomate
                 string destination = documentService.GetDestination(sourceFileTextBox.Text, new[] { modelName, nameParts[0], nameParts[1] }, selectedDateCalendar.SelectionStart);
                 if (File.Exists(destination) || Directory.Exists(destination))
                 {
-                    ShowWarning("A file or folder already exists at:\n" + destination
-                        + "\nPlease enter a different name.", "Name already exists");
+                    ShowWarning(AppText.Get("A file or folder already exists at:\n{0}\nPlease enter a different name.", destination), AppText.Get("Name already exists"));
                     return;
                 }
 
@@ -120,14 +154,13 @@ namespace DocAutomate
                 }
                 catch (Exception ex)
                 {
-                    ShowWarning("Excel document generated:\n" + destination
-                        + "\n\nCould not open its folder.\n" + ex.Message, "Document generated");
+                    ShowWarning(AppText.Get("Excel document generated:\n{0}\n\nCould not open its folder.\n{1}", destination, ex.Message), AppText.Get("Document generated"));
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, "Could not generate the Excel document.\n" + ex.Message,
-                    "Generate failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, AppText.Get("Could not generate the Excel document.\n{0}", ex.Message),
+                    AppText.Get("Generate failed"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
